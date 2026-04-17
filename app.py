@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template,make_response, redirect, url_for
 import sqlite3
 
 app = Flask(__name__)
@@ -54,10 +54,24 @@ def login():
         if user['password_hash'] != password:
             return "<h3>Eroare: Parola este gresita pentru acest email!</h3><a href='/login'>Incearca din nou</a>"
 
-        return "<h3>Logare cu succes!</h3>"
+        #aici creem cookiul dar foarte slab
+        raspuns = make_response(redirect(url_for('dashboard')))
+        raspuns.set_cookie('AuthX_USER', email) # cookie slab
+        return raspuns
 
     # pentru get
     return render_template('login.html')
+
+@app.route('/dashboard')
+def dashboard():
+    # verificam daca utiilziatorul are cookie-ul din sesiune
+    user_email = request.cookies.get('AuthX_USER')
+    
+    #daca nu l are il trimitem la login
+    if not user_email:
+        return redirect(url_for('login'))
+        
+    return render_template('dashboard.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
