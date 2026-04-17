@@ -34,5 +34,30 @@ def register():
     # pt get 
     return render_template('register.html')
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
+
+        conn = connect_to_database()
+        
+        #verificam daca exista in tabela users un user cu acest email
+        user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+        conn.close()
+
+        # aici daca emailul nu exista zicem ca nu exista
+        if user is None:
+            return "<h3>Eroare: Email-ul nu exista în baza de date!</h3><a href='/login'>Incearca din nou</a>"
+        
+        #daca email-ul exista dar parola e gresita zicem ca parola e gresita
+        if user['password_hash'] != password:
+            return "<h3>Eroare: Parola este gresita pentru acest email!</h3><a href='/login'>Incearca din nou</a>"
+
+        return "<h3>Logare cu succes!</h3>"
+
+    # pentru get
+    return render_template('login.html')
+
 if __name__ == '__main__':
     app.run(debug=True)
