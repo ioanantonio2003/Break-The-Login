@@ -3,6 +3,7 @@ import sqlite3
 import time
 import re
 import bcrypt
+import secrets
 
 app = Flask(__name__)
 
@@ -77,9 +78,23 @@ def login():
                 incercari[email] = 0
                 
                
-                 #aici creem cookiul dar foarte slab
+                 #aici creem cookiul 
+
                 raspuns = make_response(redirect(url_for('dashboard')))
-                raspuns.set_cookie('AuthX_USER', email) # cookie slab
+                raspuns.set_cookie(
+                    'AuthX_USER', 
+                    email, 
+                    httponly=True,      
+                    samesite='Strict',  
+                    max_age=3600        
+                )
+
+                conn.execute('''
+                    INSERT INTO audit_logs (user_id, action, resource, ip_address) 
+                    VALUES (?, ?, ?, ?)
+                ''', (user['id'], 'LOGIN', 'authentification', request.remote_addr))
+                conn.commit()
+
                 conn.close()
                 return raspuns
             else:
@@ -98,7 +113,7 @@ def login():
     # pentru get
     return render_template('login.html')
 
-@app.route('/dashboard')
+@app.route('/dashboard',methods=['GET', 'POST'])
 def dashboard():
     # verificam daca utiilziatorul are cookie-ul din sesiune
     user_email = request.cookies.get('AuthX_USER')
@@ -106,8 +121,36 @@ def dashboard():
     #daca nu l are il trimitem la login
     if not user_email:
         return redirect(url_for('login'))
+    conn = connect_to_database()
+    
+    #obtinem id-ul utilizatorului din sesiune
+    user = conn.execute('SELECT id FROM users WHERE email = ?', (user_email,)).fetchone()
         
-    return render_template('dashboard.html')
+    id = user['id']
+
+    # pt formularul de trimitere tiket
+    if request.method == 'POST':
+        title = request.form['title']
+        description = request.form['description']
+        severity = request.form['severity']
+        
+        conn.execute('''
+            INSERT INTO tickets (title, description, severity, status, owner_id) VALUES (?, ?, ?, ?, ?)
+        ''', (title, description, severity, 'OPEN', id))
+        conn.commit()
+        
+        conn.execute('''
+            INSERT INTO audit_logs (user_id, action, resource) 
+            VALUES (?, ?, ?)
+        ''', (id, 'CREATE_TICKET', 'ticket'))
+        conn.commit()
+        return redirect(url_for('dashboard'))
+
+    
+    tickets = conn.execute('SELECT * FROM tickets WHERE owner_id = ?', (id,)).fetchall()
+    conn.close()
+        
+    return render_template('dashboard.html', tickets = tickets)
 
 
 @app.route('/forgot', methods=['GET', 'POST'])
@@ -121,12 +164,15 @@ def forgot_password():
         conn.close()
 
         if user:
-            # token predicitibil -> timpul curent 
-            token = str(int(time.time()))
-            tokens[token] = email #adaugam token pt email respectiv care nu expira niciodata si e reutilizabil
+            t = secrets.token_urlsafe(32)
             
-            link = f"http://127.0.0.1:5000/reset/{token}"
-            return f"<h3>Token trimis!</h3><p>Intra pe link-ul: <a href='{link}'>{link}</a></p>"
+            #expira in 5 min
+            expira = time.time() + 300
+            
+            tokens[t] = {'email': email, 'expira': expira}
+            
+            link = f"http://127.0.0.1:5000/reset/{t}"
+            return f"<h3>Token trimis!!</h3><p>Expira in 5 min : <a href='{link}'>{link}</a></p>"
         else:
             return "<h3>Eroare: EMailul nu exista</h3><a href='/forgot'>Inapoi</a>"
 
@@ -139,22 +185,49 @@ def reset_password(token):
     if token not in tokens:
         return "<h3>Eroare: Token gresit!</h3>"
         
-    email = tokens[token]
+    token_data = tokens[token]
+
+    # vedem daca token-ul este expirat
+    if time.time() > token_data['expira']:
+        del tokens[token] 
+        return "<h3>Eroare: Token expirat.</h3>"
+
+    email = token_data['email']
 
     if request.method == 'POST':
         new_password = request.form['new_password']
         
+        # aaceasi regula ca la parola de inregistrare
+        if len(new_password) < 8 or not re.search(r"[a-z]", new_password) or not re.search(r"[A-Z]", new_password) or not re.search(r"[0-9]", new_password):
+            return "<h3>Eroare: Parola prea slaba!</h3><a href='/register'>Inapoi</a>"
+        
+        # hashuim parola
+        password_in_bytes = new_password.encode('utf-8')
+        salt = bcrypt.gensalt()
+        parola_hashuita = bcrypt.hashpw(password_in_bytes, salt)
+        
         conn = connect_to_database()
-
-        #actuliazam parola
-        conn.execute('UPDATE users SET password_hash = ? WHERE email = ?', (new_password, email))
+        conn.execute('UPDATE users SET password_hash = ? WHERE email = ?', (parola_hashuita.decode('utf-8'), email))
         conn.commit()
         conn.close()
         
-        #dupa ce token-ul a fost utilizat nu il stergem in dictionar
-        return "<h3>Parola resetata</h3><a href='/login'>Login</a>"
+        del tokens[token]
+        
+        return "<h3>Parola resetata!</h3><a href='/login'>Mergi la Login</a>"
         
     return render_template('reset.html', token=token)
+
+
+@app.route('/logout')
+def logout():
+    raspuns = make_response(redirect(url_for('login')))
+    raspuns.set_cookie('AuthX_USER', '', expires=0, httponly=True, samesite='Strict')
+    return raspuns
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+
+    return "<h3>EROARE</h3>"
 
 
 

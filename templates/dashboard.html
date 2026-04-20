@@ -5,5 +5,54 @@
 </head>
 <body>
     <h2>Dashboard (AuthX)</h2>
+
+    
+    <h3>Tichet nou:</h3>
+    <form method="POST" action="/dashboard">
+        <label>Titlu:</label><br>
+        <input type="text" name="title" required><br><br>
+        
+        <label>Descriere:</label><br>
+        <textarea name="description" required></textarea><br><br>
+        
+        <label>Severitate:</label><br>
+        <select name="severity">
+            <option value="LOW">LOW</option>
+            <option value="MED">MED</option>
+            <option value="HIGH">HIGH</option>
+        </select><br><br>
+        
+        <button type="submit">Creeaza Tichet</button>
+    </form>
+    
+
+    <hr>
+
+    <h3>Tichetele Mele</h3>
+    <table border="1" cellpadding="5">
+        <tr>
+            <th>ID</th>
+            <th>Titlu</th>
+            <th>Descriere</th>
+            <th>Status</th>
+            <th>Severitate</th>
+        </tr>
+        {% for ticket in tickets %}
+        <tr>
+            <td>{{ ticket['id'] }}</td>
+            <td>{{ ticket['title'] }}</td>
+            <td>{{ ticket['description'] }}</td>
+            <td>{{ ticket['status'] }}</td>
+            <td>{{ ticket['severity'] }}</td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="5">Niciun tichet existent.</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <br><br>
+    <a href="/logout">Logout</a>
 </body>
 </html>
