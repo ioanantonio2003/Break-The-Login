@@ -1,6 +1,8 @@
 from flask import Flask, request, render_template,make_response, redirect, url_for
 import sqlite3
 import time
+import re
+import bcrypt
 
 app = Flask(__name__)
 
@@ -19,13 +21,21 @@ def register():
         email = request.form['email']
         password = request.form['password']
 
-        #acum lasam parola sa fie oricat de slaba si scurta
-        #nu hashuim parola si o lasam in clar
+        #parola trebuie sa aibe cel putin 8 caractere, o litera mica, o litera mare si o cifra .
+        if len(password) < 8 or not re.search(r"[a-z]", password) or not re.search(r"[A-Z]", password) or not re.search(r"[0-9]", password):
+            return "<h3>Eroare: Parola prea slaba!</h3><a href='/register'>Inapoi</a>"
+
+        #hash-uim parola
+        password_in_bytes = password.encode('utf-8')
         
+        # creem has-ul
+        salt = bcrypt.gensalt()
+        parola_hashuita = bcrypt.hashpw(password_in_bytes, salt)
+
         conn = connect_to_database()
         try:
-            #inseram utilizatorul in baza de date
-            conn.execute('INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)', (email, password, 'USER'))
+         #inseram utilizatorul in baza de date
+            conn.execute('INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)', (email, parola_hashuita.decode('utf-8'), 'USER'))
             conn.commit()
             conn.close()
             return "<h3>Cont creat cu succes!</h3><a href='/register'>Inapoi</a>"
@@ -34,7 +44,6 @@ def register():
             conn.close()
             return "<h3>Eroare: Email deja existent!</h3><a href='/register'>Inapoi</a>"
 
-    # pt get 
     return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
