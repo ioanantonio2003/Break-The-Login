@@ -7,6 +7,8 @@ import bcrypt
 app = Flask(__name__)
 
 tokens = {}
+incercari = {}
+maxim = 3
 
 # ne conectam la baza de date
 def connect_to_database():
@@ -56,20 +58,42 @@ def login():
         
         #verificam daca exista in tabela users un user cu acest email
         user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
-        conn.close()
 
         # aici daca emailul nu exista zicem ca nu exista
         if user is None:
-            return "<h3>Eroare: Email-ul nu exista în baza de date!</h3><a href='/login'>Incearca din nou</a>"
+            return "<h3>Eroare: Logare invalida sau cont blocat!</h3><a href='/login'>Incearca din nou</a>"
         
-        #daca email-ul exista dar parola e gresita zicem ca parola e gresita
-        if user['password_hash'] != password:
-            return "<h3>Eroare: Parola este gresita pentru acest email!</h3><a href='/login'>Incearca din nou</a>"
+        #daca emailul a fost incercat de 3 ori il blocam
+        if user and user['locked']:
+            conn.close()
+            return "<h3>Eroare: Logare invalida sau cont blocat!</h3><a href='/login'>Incearca din nou</a>"
 
-        #aici creem cookiul dar foarte slab
-        raspuns = make_response(redirect(url_for('dashboard')))
-        raspuns.set_cookie('AuthX_USER', email) # cookie slab
-        return raspuns
+        if user:
+            password_in_bytes = password.encode('utf-8')
+            parola_hashuita = user['password_hash'].encode('utf-8')
+            
+            #vedem daca parolele sunt la fel
+            if bcrypt.checkpw(password_in_bytes, parola_hashuita):
+                incercari[email] = 0
+                
+               
+                 #aici creem cookiul dar foarte slab
+                raspuns = make_response(redirect(url_for('dashboard')))
+                raspuns.set_cookie('AuthX_USER', email) # cookie slab
+                conn.close()
+                return raspuns
+            else:
+                #daca parola e gresit numarul de incercari creste
+                incercari[email] = incercari.get(email, 0) + 1
+                
+                #blocam contul
+                if incercari[email] >= maxim:
+                    conn.execute('UPDATE users SET locked = 1 WHERE email = ?', (email,))
+                    conn.commit()
+
+                conn.close()
+
+                return "<h3>Eroare: Logare invalida sau cont blocat!</h3><a href='/login'>Incearca din nou</a>"
 
     # pentru get
     return render_template('login.html')
